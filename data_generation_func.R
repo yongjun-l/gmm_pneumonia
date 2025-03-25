@@ -1,4 +1,6 @@
-# Kline and Michael's code
+# Data Generation ----
+
+## Version 1: Kline and Michael's version ----
 pneumonia_data <- function(
     n = 1000,
     k = 3,
@@ -47,7 +49,8 @@ pneumonia_data <- function(
 
   # Return the data
   dat <- data.frame(L, Z, A, L_star, Y)
-
+  
+  # get conditional probabilities
   param <- list(
     # P(L)
     p_L = p_L,
@@ -79,17 +82,11 @@ pneumonia_data <- function(
   return(list(dat=dat, param=param))
 }
 
-# Yongjun's simulation version
+## Version 2: Yongjun's version ----
 pneumonia_data_yj <- function(
     n=1000,
     k=3
 ){
-
-  # Defunct
-  # # Simulate a latent factor U to induce correlation between L and Z
-  # # This is to make sure L and Z are correlated since we don't have a directional
-  # # arrow for that part of the dag.
-  # U <- rnorm(n)
 
   param <- list(
     # P(L)
@@ -185,26 +182,26 @@ pneumonia_data_yj <- function(
 }
 
 
-# Implement GMM
+# Implement GMM ----
 gmm_functions <- function(theta, dat) {
 
   p_L <- theta[1]
 
-  p_Z1_L0 <- theta[2]
+  p_Z1_L0 <- theta[2] # P(Z=1|L=0)
   p_Z2_L0 <- theta[3]
   p_Z1_L1 <- theta[4]
   p_Z2_L1 <- theta[5]
 
-  p_A_Z1 <- theta[6]
+  p_A_Z1 <- theta[6] # P(A=1|Z=1)
   p_A_Z2 <- theta[7]
   p_A_Z3 <- theta[8]
 
-  p_Ls_A0L0 <- theta[9]
+  p_Ls_A0L0 <- theta[9] # P(L*=1|A=0, L=0)
   p_Ls_A0L1 <- theta[10]
   p_Ls_A1L0 <- theta[11]
   p_Ls_A1L1 <- theta[12]
 
-  p_Y_Ls0A0L0 <- theta[13]
+  p_Y_Ls0A0L0 <- theta[13] # P(Y=1|L*=0, A=0, L=0)
   p_Y_Ls0A0L1 <- theta[14]
   p_Y_Ls0A1L0 <- theta[15]
   p_Y_Ls0A1L1 <- theta[16]
@@ -213,12 +210,12 @@ gmm_functions <- function(theta, dat) {
   p_Y_Ls1A1L0 <- theta[19]
   p_Y_Ls1A1L1 <- theta[20]
 
-
+  # Get the counts for each strata. i.e. I(Z=z, A=a, L*=l*, Y=y)
   counts <- table(dat$Z, dat$A, dat$L_star, dat$Y) / nrow(dat)
 
-
   # Estimating equations
-  # Z A Ls Y
+  # index of countds corresponds to each level of Z, A, L*, Y
+  # for example, counts[3,1,2,2] = I(Z=3, A=1, L*=2, Y=2)
   m1  <- counts[1,1,1,1] - ((1-p_L) * p_Z1_L0             * (1-p_A_Z1) * (1-p_Ls_A0L0) * (1-p_Y_Ls0A0L0) + p_L * p_Z1_L1             * (1-p_A_Z1) * (1-p_Ls_A0L1) * (1-p_Y_Ls0A0L1))
   m2  <- counts[1,1,1,2] - ((1-p_L) * p_Z1_L0             * (1-p_A_Z1) * (1-p_Ls_A0L0) * p_Y_Ls0A0L0     + p_L * p_Z1_L1             * (1-p_A_Z1) * (1-p_Ls_A0L1) * p_Y_Ls0A0L1)
   m3  <- counts[1,1,2,1] - ((1-p_L) * p_Z1_L0             * (1-p_A_Z1) * p_Ls_A0L0     * (1-p_Y_Ls1A0L0) + p_L * p_Z1_L1             * (1-p_A_Z1) * p_Ls_A0L1     * (1-p_Y_Ls1A0L1))
@@ -249,62 +246,58 @@ gmm_functions <- function(theta, dat) {
   return(sum(vec^2))
 }
 
-
-# debugonce(pneumonia_data)
+# Main ----
 set.seed(362025)
-test_dat <- pneumonia_data_yj(n=500000)
+test_dat <- pneumonia_data_yj(n=50000)
 param <- unlist(test_dat$param)
 dat <- test_dat$dat
 
-# Sanity check
+## Sanity check ----
 table(dat$L) / nrow(dat)
 table(dat$L_star) / nrow(dat)
 table(dat$L, dat$Z) / rowSums(table(dat$L, dat$Z))
 table(dat$Z, dat$A) / rowSums(table(dat$Z, dat$A))
 
-# Step 3: Optimize using optim()
+## Optimize using optim() ----
 theta_start <- rep(0.1,20)  # Initial guess
 gmm_solution <- optim(theta_start, gmm_functions, dat = dat, method = "L-BFGS-B", lower = rep(0,20), upper = rep(1,20))
 cbind(param,gmm_solution$par, abs(param-gmm_solution$par))
 
-# Simulations
-m=1
-n=500000
+## Optimize using BB package ----
+library(BB)
+gmm_solution_bb <- BBoptim(par = theta_start, fn = gmm_functions, dat = dat, lower = rep(0,20), upper = rep(1,20))
+cbind(param,gmm_solution_bb$par, abs(param-gmm_solution_bb$par))
+
+
+## Simulations ----
+m=100 # number of simulations
+n=5000 # sample size
 probs_iter <- matrix(NA, nrow = m, ncol = 20)
 for (i in 1:m) {
   print(i)
   test_dat <- pneumonia_data_yj(n=n)
   param <- unlist(test_dat$param)
   dat <- test_dat$dat
-
-  # Step 3: Optimize using optim()
+  
   theta_start <- rep(0.1,20)  # Initial guess
-  gmm_solution <- optim(theta_start, gmm_functions, dat = dat, method = "L-BFGS-B", lower = rep(0,20), upper = rep(1,20))
+  gmm_solution <- BBoptim(par = theta_start, fn = gmm_functions, dat = dat, lower = rep(0,20), upper = rep(1,20))
   probs_iter[i,] <- gmm_solution$par
 }
-
-# BB package
-
-
-
 rslts <- cbind(param,colMeans(probs_iter),apply(probs_iter, 2, sd),abs(param-colMeans(probs_iter)))
 colnames(rslts) <- c("True", "Estimate", "SE", "Bias")
 rslts <- round(rslts, 4)
 
 
-
+# Save results ----
 library(flextable)
 library(officer)
+saveRDS(rslts, paste0("m", m, "_n", n, "_yj_param2.rds"))
 
-# Convert matrix to data frame and preserve row names
+# save to Word
 df <- as.data.frame(rslts)
 df <- cbind(RowName = rownames(df), df)
-
-# Create a Word document with a table
 doc <- read_docx() |>
   body_add_flextable(flextable(df))
-
-# Save the Word file
 print(doc, target = "m500_n1000_yj_param2.docx")
 
 
