@@ -2,7 +2,7 @@
 
 This code generates pneumonia data from the DAG below and estimates the 20 simulation parameters using Generalized Method of Moments (GMM) equations.
 
-![](DAG.png){width="281"}
+![](DAG.png)
 
 -   $L$: true pneumonia status
 
